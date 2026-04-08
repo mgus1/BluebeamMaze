@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "BluebeamMaze": {
+      "commandName": "Project",
+      "commandLineArgs": "maze.png output.png",
+      "workingDirectory": ".\\bin\\Debug\\net9.0-windows"
+    }
+  }
+}
