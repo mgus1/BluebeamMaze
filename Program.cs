@@ -1,7 +1,3 @@
-
-using System.Drawing.Imaging;
-using System.IO;
-
 namespace BluebeamMaze;
 
 internal static class Program
@@ -30,13 +26,12 @@ internal static class Program
 		try
 		{
 			var mazeBitmap = new Bitmap(sourceFile);
-			Console.WriteLine($"Maze size is {mazeBitmap.Width} x {mazeBitmap.Height}");
 
 			var maze = new Maze(mazeBitmap);
 			var startRoom = maze.FindRoom(Feature.Start);
 			var endRoom = maze.FindRoom(Feature.End);
 			if (startRoom == null || endRoom == null)
-				throw new Exception("Could not find starting and ending rooms");
+				throw new Exception("Could not find both a starting and ending room");
 
 			var path = maze.FindPath(startRoom, endRoom);
 			if (path == null)
@@ -59,7 +54,7 @@ internal static class Program
 	/// <param name="bmp">The in memory bitmap. This is drawn onto.</param>
 	/// <param name="path">A list of rooms to draw the path from</param>
 	/// <param name="color">The color of the path to draw</param>
-	public static void DrawPathOnBitmap(Bitmap bmp, List<Room> path, Color color)
+	private static void DrawPathOnBitmap(Bitmap bmp, List<Room> path, Color color)
 	{
 		using var pen = new Pen(color, 3);
 		using var g = Graphics.FromImage(bmp);
