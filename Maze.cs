@@ -1,16 +1,15 @@
-﻿
-using System.Collections.Generic;
-
-namespace BluebeamMaze;
+﻿namespace BluebeamMaze;
 
 /// <summary>
 /// This class represents a maze as a set of interconnected rooms. Each room
-/// points back to the original maze in terms of coordinates.
+/// points back to the original maze in terms of X,Y pixel coordinates.
 /// </summary>
 internal class Maze
 {
+	#region public API
+
 	public Maze(Bitmap mazeBitmap) =>
-		_rooms = CreateRooms(TranslateBitmap(mazeBitmap));
+		CreateRooms(TranslateBitmap(mazeBitmap));
 
 	/// <summary>
 	/// Find a path from the start room to the end room
@@ -21,7 +20,7 @@ internal class Maze
 	public List<Room>? FindPath(Room start, Room end)
 	{
 		var path = new List<Room>();
-		var hashSet = new HashSet<Room>();	// also all rooms in path, but keyed for quick check
+		var hashSet = new HashSet<Room>();	// also all rooms in path, but keyed for quickly checking if a room is already in the path (i.e. Contains uses a hash rather than a scan)
 
 		var room = start;
 		var nextIx = 0;		// the index of the next room to select
@@ -31,8 +30,8 @@ internal class Maze
 		{
 			if (nextIx < room.Connections.Count)
 			{
-				var next = room.Connections[nextIx];
-				if (hashSet.Contains(next))
+				var nextRoom = room.Connections[nextIx];
+				if (hashSet.Contains(nextRoom))
 				{
 					nextIx++;	// if this is the room we just came from, then skip. Could also be circular path (example doesn't have that though)
 				}
@@ -40,21 +39,21 @@ internal class Maze
 				{
 					path.Add(room);
 					hashSet.Add(room);
-					room = next;
+					room = nextRoom;
 					nextIx = 0;
 				}
 			}
 			else
 			{
-				// need to back up
+				// need to back up and try next connection/passage
 				if (path.Count == 0) return null;	// if can't then no solution
 
-				var prev = path[path.Count - 1];
-				path.Remove(prev);
-				hashSet.Remove(room);
+				var prevRoom = path[path.Count - 1];
+				path.Remove(prevRoom);
+				hashSet.Remove(prevRoom);
 
-				nextIx = prev.Connections.IndexOf(room) + 1;
-				room = prev;
+				nextIx = prevRoom.Connections.IndexOf(room) + 1;
+				room = prevRoom;
 			}
 		}
 		path.Add(room);
@@ -65,32 +64,31 @@ internal class Maze
 	/// <summary>
 	/// Find the first room with the given feature
 	/// </summary>
-	/// <param name="feature"></param>
-	/// <returns></returns>
+	/// <param name="feature">What feature to look for (i.e. Start or End)</param>
+	/// <returns>The first room with the given feature or null if not found</returns>
 	public Room? FindRoom(Feature feature)
 		=> _rooms.FirstOrDefault(room => room.Feature == feature);
 
+	#endregion
 	#region Create the room list
 
 	/// <summary>
 	/// Create the list of rooms and all their connections
 	/// </summary>
 	/// <param name="features">The maze bitmap converted to 2D feature array</param>
-	/// <returns>List of all rooms</returns>
-	private List<Room> CreateRooms(Feature[,] features)
+	private void CreateRooms(Feature[,] features)
 	{
-		List<Room> rooms = new List<Room>();
-
 		var roomGrid = CreateRoomGrid(features);
-		int gridWidth = roomGrid.GetLength(0);
-		int gridHeight = roomGrid.GetLength(1);
-		for (int x = 0; x != gridWidth; x++)
+		var gridWidth = roomGrid.GetLength(0);
+		var gridHeight = roomGrid.GetLength(1);
+		for (var x = 0; x != gridWidth; x++)
 		{
-			for (int y = 0; y != gridHeight; y++)
+			for (var y = 0; y != gridHeight; y++)
 			{
 				var room1 = roomGrid[x, y];
-				rooms.Add(room1);
+				_rooms.Add(room1);
 
+				// connected to room to the right?
 				if (x < gridWidth-1)
 				{
 					var room2 = roomGrid[x + 1, y];
@@ -101,6 +99,7 @@ internal class Maze
 					}
 				}
 
+				// connected to room below?
 				if (y < gridHeight-1)
 				{
 					var room2 = roomGrid[x, y + 1];
@@ -112,24 +111,81 @@ internal class Maze
 				}
 			}
 		}
-		return rooms;
 	}
 
 	/// <summary>
 	/// Create a grid of rooms from the feature array.
-	/// TODO: Make this not require fixed size rooms.
 	/// </summary>
 	/// <param name="features">Describes the maze bitmap</param>
-	/// <returns>An array of rooms</returns>
-	private Room[,] CreateRoomGrid(Feature[,] features)
+	/// <returns>A 2D array of rooms representation of the original maze bitmap</returns>
+	private static Room[,] CreateRoomGrid(Feature[,] features)
 	{
-		var rooms = new Room[10,10];
-		for (int x = 0; x != 10; x++)
+		// Note: it is assumed the maze is in a regular grid pattern. I don't assume the size of the rooms
+		//	or even that they are square (although that is true of the test maze). It is assumed that
+		//	walls are a single pixel in thickness and perfectly vertical or horizontal. This algorithm
+		//	could be easily tweaked if necessary to accommodate imperfect walls.
+
+		const int minWallLength = 2;			// minimum # pixels required to constitute a wall
+
+		var width = features.GetLength(0);
+		var height = features.GetLength(1);
+
+		// determine where the vertical walls are
+		var vertWalls = new List<int>();    // list of X coordinates from left to right of where the vertical walls are
+		for (var x = 0; x != width; x++)
 		{
-			for (int y = 0; y != 10; y++)
+			var wallCount = 0;
+			for (var y = 0; y != height; y++)
 			{
-				var feature = features[x * 44 + 21, y * 44 + 21];
-				var room = new Room(feature, x * 44 + 1, y * 44 + 1, 43, 43);
+				if (features[x,y] != Feature.Wall)
+					wallCount = 0;
+				else if (++wallCount == minWallLength)
+				{
+					vertWalls.Add(x);
+					break;
+				}
+			}
+		}
+
+		// determine where the horizontal walls are
+		var horzWalls = new List<int>();    // list of Y coordinates from top to bottom of where the horizontal walls are
+		for (var y = 0; y != height; y++)
+		{
+			var wallCount = 0;
+			for (var x = 0; x != width; x++)
+			{
+				if (features[x, y] != Feature.Wall)
+					wallCount = 0;
+				else if (++wallCount == minWallLength)
+				{
+					horzWalls.Add(y);
+					break;
+				}
+			}
+		}
+
+		// get # of rooms in each dimension and make sure we have some
+		var numRoomsX = vertWalls.Count - 1;
+		var numRoomsY = horzWalls.Count - 1;
+		if (numRoomsX < 1 || numRoomsY < 1)
+			throw new Exception("No maze rooms found");
+
+		// now, using the wall locations, calculate room coordinates,
+		//  determine what type it is, and add to the room grid
+		var rooms = new Room[numRoomsX, numRoomsY];
+		for (var x = 0; x != numRoomsX; x++)
+		{
+			for (var y = 0; y != numRoomsY; y++)
+			{
+				// get coordinates and size of room based on wall locations
+				var roomX = vertWalls[x] + 1;
+				var roomY = horzWalls[y] + 1;
+				var roomWidth = vertWalls[x + 1] - roomX;
+				var roomHeight = horzWalls[y + 1] - roomY;
+
+				// look at pixel in center of the room to determine if start, end, or normal room
+				var feature = features[roomX + roomWidth/2, roomY + roomHeight/2];
+				var room = new Room(feature, roomX, roomY, roomWidth, roomHeight);
 				rooms[x,y] = room;
 			}
 		}
@@ -140,21 +196,21 @@ internal class Maze
 	/// Checks if two rooms are connected or if a wall is between them. This assumes
 	/// the two rooms are either in the same column or row
 	/// </summary>
-	/// <param name="a">The first of the two rooms</param>
-	/// <param name="b">The second of the two rooms</param>
+	/// <param name="room1">The first of the two rooms</param>
+	/// <param name="room2">The second of the two rooms</param>
 	/// <returns>true if no wall between them</returns>
-	private bool AreRoomsConnected(Room a, Room b, Feature[,] features)
+	private static bool AreRoomsConnected(Room room1, Room room2, Feature[,] features)
 	{
 		// get coordinates of room centers
-		int x1 = a.X + a.Width / 2;
-		int y1 = a.Y + a.Height / 2;
-		int x2 = b.X + b.Width / 2;
-		int y2 = b.Y + b.Height / 2;
+		var x1 = room1.X + room1.Width / 2;
+		var y1 = room1.Y + room1.Height / 2;
+		var x2 = room2.X + room2.Width / 2;
+		var y2 = room2.Y + room2.Height / 2;
 
 		// Determine the path we're stepping as we're scanning for the wall.
 		// Note: this could be extended for arbitrary slopes (using fractional stepping in shorter dimension)
-		int stepX = x1 == x2 ? 0 : x1 < x2 ? 1 : -1;
-		int stepY = y1 == y2 ? 0 : y1 < y2 ? 1 : -1;
+		var stepX = x1 == x2 ? 0 : x1 < x2 ? 1 : -1;
+		var stepY = y1 == y2 ? 0 : y1 < y2 ? 1 : -1;
 
 		while (y1 != y2 || x1 != x2)
 		{
@@ -177,8 +233,8 @@ internal class Maze
 	private static Feature[,] TranslateBitmap (Bitmap bitmap)
 	{
 		var features = new Feature[bitmap.Width, bitmap.Height];
-		for (int x = 0; x != bitmap.Width; x++)
-			for (int y = 0; y != bitmap.Height; y++)
+		for (var x = 0; x != bitmap.Width; x++)
+			for (var y = 0; y != bitmap.Height; y++)
 				features[x, y] = ConvertPixelToFeature(bitmap.GetPixel(x, y));
 		return features;
 	}
@@ -207,7 +263,7 @@ internal class Maze
 	#endregion
 	#region Data
 
-	private List<Room> _rooms;
+	private List<Room> _rooms = new();
 
 	#endregion
 }
